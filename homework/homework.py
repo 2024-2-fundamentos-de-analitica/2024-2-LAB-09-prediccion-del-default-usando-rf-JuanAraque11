@@ -94,7 +94,6 @@
 #
 
 
-
 import gzip
 import json
 import os
@@ -117,7 +116,7 @@ from sklearn.pipeline import Pipeline  # type: ignore
 from sklearn.preprocessing import OneHotEncoder  # type: ignore
 
 
-def cargar_zip(input_directory):
+def load_data(input_directory):
     """Read zip files in a directory and store them in dfs"""
     dfs = []
 
@@ -133,7 +132,7 @@ def cargar_zip(input_directory):
     return dfs
 
 
-def directory_output(output_directory):
+def _create_output_directory(output_directory):
     if os.path.exists(output_directory):
         for file in glob(f"{output_directory}/*"):
             os.remove(file)
@@ -141,7 +140,7 @@ def directory_output(output_directory):
     os.makedirs(output_directory)
 
 
-def limpiar(df):
+def clean_df(df):
     """Paso 1: Clean dataset"""
     df = df.copy()
     df = df.rename(columns={"default payment next month": "default"})
@@ -156,7 +155,7 @@ def split_data(df):
     return df.drop(columns=["default"]), df["default"]
 
 
-def tuberia():
+def create_pipeline():
     """Paso 3: Create processing pipeline"""
     cat_features = ["SEX", "EDUCATION", "MARRIAGE"]
     preprocessor = ColumnTransformer(
@@ -171,7 +170,7 @@ def tuberia():
     )
 
 
-def estimador(pipeline):
+def create_estimator(pipeline):
     """Pipeline"""
     param_grid = {
         "classifier__n_estimators": [100, 200, 500],
@@ -191,7 +190,7 @@ def estimador(pipeline):
 
 
 def _save_model(path, estimator):
-    directory_output("files/models/")
+    _create_output_directory("files/models/")
 
     with gzip.open(path, "wb") as f:
         pickle.dump(estimator, f)
@@ -220,15 +219,15 @@ def calculate_confusion(dataset_type, y_true, y_pred):
     }
 
 
-def init_model():
-    test_df, train_df = [limpiar(df) for df in cargar_zip("files/input")]
+def _run_jobs():
+    test_df, train_df = [clean_df(df) for df in load_data("files/input")]
 
     x_train, y_train = split_data(train_df)
     x_test, y_test = split_data(test_df)
 
-    pipeline = tuberia()
+    pipeline = create_pipeline()
 
-    estimator = estimador(pipeline)
+    estimator = create_estimator(pipeline)
     estimator.fit(x_train, y_train)
 
     _save_model(
@@ -252,4 +251,4 @@ def init_model():
 
 
 if __name__ == "__main__":
-    init_model()
+    _run_jobs()
