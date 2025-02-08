@@ -92,3 +92,164 @@
 # {'type': 'cm_matrix', 'dataset': 'train', 'true_0': {"predicted_0": 15562, "predicte_1": 666}, 'true_1': {"predicted_0": 3333, "predicted_1": 1444}}
 # {'type': 'cm_matrix', 'dataset': 'test', 'true_0': {"predicted_0": 15562, "predicte_1": 650}, 'true_1': {"predicted_0": 2490, "predicted_1": 1420}}
 #
+
+
+
+import gzip
+import json
+import os
+import pickle
+import zipfile
+from glob import glob
+
+import pandas as pd  # type: ignore
+from sklearn.compose import ColumnTransformer  # type: ignore
+from sklearn.ensemble import RandomForestClassifier  # type: ignore
+from sklearn.metrics import (  # type: ignore
+    balanced_accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+)
+from sklearn.model_selection import GridSearchCV  # type: ignore
+from sklearn.pipeline import Pipeline  # type: ignore
+from sklearn.preprocessing import OneHotEncoder  # type: ignore
+
+
+def cargar_zip(input_directory):
+    """Read zip files in a directory and store them in dfs"""
+    dfs = []
+
+    routes = glob(f"{input_directory}/*")
+
+    for route in routes:
+        with zipfile.ZipFile(f"{route}", mode="r") as zf:
+            for fn in zf.namelist():
+
+                with zf.open(fn) as f:
+                    dfs.append(pd.read_csv(f, sep=",", index_col=0))
+
+    return dfs
+
+
+def directory_output(output_directory):
+    if os.path.exists(output_directory):
+        for file in glob(f"{output_directory}/*"):
+            os.remove(file)
+        os.rmdir(output_directory)
+    os.makedirs(output_directory)
+
+
+def limpiar(df):
+    """Paso 1: Clean dataset"""
+    df = df.copy()
+    df = df.rename(columns={"default payment next month": "default"})
+    df = df.loc[df["MARRIAGE"] != 0]
+    df = df.loc[df["EDUCATION"] != 0]
+    df["EDUCATION"] = df["EDUCATION"].apply(lambda x: 4 if x >= 4 else x)
+    return df.dropna()
+
+
+def split_data(df):
+    """Paso 2: feats & Target"""
+    return df.drop(columns=["default"]), df["default"]
+
+
+def tuberia():
+    """Paso 3: Create processing pipeline"""
+    cat_features = ["SEX", "EDUCATION", "MARRIAGE"]
+    preprocessor = ColumnTransformer(
+        [("cat", OneHotEncoder(handle_unknown="ignore"), cat_features)],
+        remainder="passthrough",
+    )
+    return Pipeline(
+        [
+            ("preprocessor", preprocessor),
+            ("classifier", RandomForestClassifier(random_state=42)),
+        ]
+    )
+
+
+def estimador(pipeline):
+    """Pipeline"""
+    param_grid = {
+        "classifier__n_estimators": [100, 200, 500],
+        "classifier__max_depth": [None, 5, 10],
+        "classifier__min_samples_split": [2, 5],
+        "classifier__min_samples_leaf": [1, 2],
+    }
+
+    return GridSearchCV(
+        pipeline,
+        param_grid,
+        cv=10,
+        scoring="balanced_accuracy",
+        n_jobs=-1,
+        refit=True,
+    )
+
+
+def _save_model(path, estimator):
+    directory_output("files/models/")
+
+    with gzip.open(path, "wb") as f:
+        pickle.dump(estimator, f)
+
+
+def calculate_metrics(dataset_type, y_true, y_pred):
+    """Calculate metrics"""
+    return {
+        "type": "metrics",
+        "dataset": dataset_type,
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
+        "recall": recall_score(y_true, y_pred, zero_division=0),
+        "f1_score": f1_score(y_true, y_pred, zero_division=0),
+    }
+
+
+def calculate_confusion(dataset_type, y_true, y_pred):
+    """Confusion matrix"""
+    cm = confusion_matrix(y_true, y_pred)
+    return {
+        "type": "cm_matrix",
+        "dataset": dataset_type,
+        "true_0": {"predicted_0": int(cm[0][0]), "predicted_1": int(cm[0][1])},
+        "true_1": {"predicted_0": int(cm[1][0]), "predicted_1": int(cm[1][1])},
+    }
+
+
+def init_model():
+    test_df, train_df = [limpiar(df) for df in cargar_zip("files/input")]
+
+    x_train, y_train = split_data(train_df)
+    x_test, y_test = split_data(test_df)
+
+    pipeline = tuberia()
+
+    estimator = estimador(pipeline)
+    estimator.fit(x_train, y_train)
+
+    _save_model(
+        os.path.join("files/models/", "model.pkl.gz"),
+        estimator,
+    )
+
+    y_test_pred = estimator.predict(x_test)
+    test_precision_metrics = calculate_metrics("test", y_test, y_test_pred)
+    y_train_pred = estimator.predict(x_train)
+    train_precision_metrics = calculate_metrics("train", y_train, y_train_pred)
+
+    test_confusion_metrics = calculate_confusion("test", y_test, y_test_pred)
+    train_confusion_metrics = calculate_confusion("train", y_train, y_train_pred)
+
+    with open("files/output/metrics.json", "w", encoding="utf-8") as file:
+        file.write(json.dumps(train_precision_metrics) + "\n")
+        file.write(json.dumps(test_precision_metrics) + "\n")
+        file.write(json.dumps(train_confusion_metrics) + "\n")
+        file.write(json.dumps(test_confusion_metrics) + "\n")
+
+
+if __name__ == "__main__":
+    init_model()
