@@ -101,19 +101,19 @@ import pickle
 import zipfile
 from glob import glob
 
-import pandas as pd  # type: ignore
-from sklearn.compose import ColumnTransformer  # type: ignore
-from sklearn.ensemble import RandomForestClassifier  # type: ignore
-from sklearn.metrics import (  # type: ignore
+import pandas as pd  
+from sklearn.compose import ColumnTransformer  
+from sklearn.ensemble import RandomForestClassifier  
+from sklearn.metrics import (  
     balanced_accuracy_score,
     confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import GridSearchCV  # type: ignore
-from sklearn.pipeline import Pipeline  # type: ignore
-from sklearn.preprocessing import OneHotEncoder  # type: ignore
+from sklearn.model_selection import GridSearchCV  
+from sklearn.pipeline import Pipeline  
+from sklearn.preprocessing import OneHotEncoder  
 
 
 def load_data(input_directory):
